@@ -311,8 +311,8 @@ def render_meet():
     </style>
     """, unsafe_allow_html=True)
 
-    class_link = "https://meet.google.com/your-class-link"
-
+    class_link = "https://outpour-snowsuit-unissued.ngrok-free.dev "
+    
     if "meet_page" not in st.session_state:
         st.session_state.meet_page = "home"
 
@@ -344,8 +344,9 @@ def render_meet():
         duration = st.selectbox("Duration", ["30 mins", "45 mins", "60 mins", "90 mins"])
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("Start Hosting", use_container_width=True):
-                st.success(f"Meeting ready! Host: {host_name or 'Teacher'} | Topic: {topic or 'Classroom Session'} | Duration: {duration}")
+            class_link = "http://127.0.0.1:5500/teacher"
+            st.link_button("Start Hosting", class_link, use_container_width=True)
+            
         with col2:
             if st.button("Back to Home", use_container_width=True):
                 go_to("home"); st.rerun()
