@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Virtual Classroom – Teacher</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f1117; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 24px; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+    }
+    h1 { color: #4fc3f7; font-size: 1.5rem; }
+    .top-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .stats { display: flex; gap: 16px; flex-wrap: wrap; }
+    .stat { background: #1e2130; border-radius: 10px; padding: 10px 20px; text-align: center; }
+    .stat .num { font-size: 1.6rem; font-weight: bold; }
+    .stat .lbl { font-size: 0.75rem; color: #888; }
+    .stat.green .num { color: #69f0ae; }
+    .stat.red .num   { color: #ff8a80; }
+    .stat.blue .num  { color: #4fc3f7; }
+
+    #hands-bar {
+      display: none;
+      background: #1a3a1a; border: 1px solid #2e7d32;
+      border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+    }
+
+    #empty-msg { color: #555; text-align: center; margin-top: 80px; font-size: 1rem; }
+    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+
+    .student-card {
+      background: #1e2130; border-radius: 12px; overflow: hidden;
+      border: 2px solid #2a2d3e; transition: border-color 0.3s; position: relative;
+    }
+    .student-card.attentive     { border-color: #2e7d32; }
+    .student-card.not-attentive { border-color: #c62828; }
+    .student-card img { width: 100%; display: block; background: #000; min-height: 180px; }
+
+    .card-footer { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+    .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .student-name { font-size: 0.95rem; font-weight: 600; flex: 1; }
+    .badge { font-size: 0.75rem; font-weight: bold; padding: 3px 10px; border-radius: 20px; }
+    .badge.yes { background: #1b5e20; color: #69f0ae; }
+    .badge.no  { background: #b71c1c; color: #ff8a80; }
+
+    .emotion-label { font-size: 0.85rem; color: #90caf9; }
+
+    .card-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+    .kick-btn {
+      background: #7f0000; color: #ff8a80; border: none; border-radius: 8px;
+      padding: 4px 10px; font-size: 0.75rem; font-weight: bold; cursor: pointer;
+    }
+    .kick-btn:hover { background: #c62828; color: #fff; }
+
+    .unmute-btn {
+      display: none;
+      background: #4fc3f7; color: #0f1117; border: none; border-radius: 8px;
+      padding: 4px 10px; font-size: 0.75rem; font-weight: bold; cursor: pointer;
+    }
+
+    .hand-indicator { display: none; font-size: 0.8rem; color: #fff176; }
+
+    .kicked-overlay {
+      position: absolute; inset: 0; background: rgba(198,40,40,0.85);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; font-weight: bold; color: #fff; border-radius: 12px;
+      animation: fadeOverlay 1s forwards;
+    }
+    @keyframes fadeOverlay {
+      0%  { opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>👩‍🏫 Teacher Dashboard</h1>
+    <div class="top-actions">
+      <button id="mic-btn" onclick="toggleMic()" style="background:#1e2130;color:#69f0ae;border:1px solid #2e7d32;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:0.85rem;">🎤 Start Speaking</button>
+      <a href="/whiteboard" style="background:#4fc3f7;color:#0f1117;border-radius:8px;padding:8px 16px;font-weight:700;text-decoration:none;font-size:0.85rem;">🖊️ Whiteboard</a>
+      <button onclick="endClass()" style="background:#b71c1c;color:#ff8a80;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:0.85rem;">⏹️ End Class</button>
+    </div>
+    <div class="stats">
+      <div class="stat blue"><div class="num" id="total">0</div><div class="lbl">Students</div></div>
+      <div class="stat green"><div class="num" id="attentive-count">0</div><div class="lbl">Attentive</div></div>
+      <div class="stat red"><div class="num" id="not-attentive-count">0</div><div class="lbl">Not Attentive</div></div>
+    </div>
+  </header>
+
+  <div id="hands-bar">
+    <strong style="color:#69f0ae;">✋ Hands Raised:</strong>
+    <span id="hands-list" style="margin-left:8px;color:#e0e0e0;"></span>
+  </div>
+
+  <p id="empty-msg">Waiting for students to join...</p>
+  <div id="grid"></div>
+
+  <script>
+    const socket = io();
+    const students = {};
+    const mutedStudents = {};
+
+    function updateStats() {
+      const total = Object.keys(students).length;
+      const att = Object.values(students).filter(s => s.attentive).length;
+      document.getElementById('total').textContent = total;
+      document.getElementById('attentive-count').textContent = att;
+      document.getElementById('not-attentive-count').textContent = total - att;
+      document.getElementById('empty-msg').style.display = total === 0 ? 'block' : 'none';
+    }
+
+    function kickStudent(sid, name) {
+      const card = document.getElementById(`card-${sid}`);
+      if (!card) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'kicked-overlay';
+      overlay.textContent = `🚪 ${name} removed`;
+      card.appendChild(overlay);
+      socket.emit('kick_student', { sid });
+      setTimeout(() => { delete students[sid]; card.remove(); updateStats(); }, 1000);
+    }
+
+    function toggleMute(sid) {
+      const btn = document.getElementById(`unmute-btn-${sid}`);
+      if (mutedStudents[sid]) {
+        socket.emit('mute_student', { sid });
+        mutedStudents[sid] = false;
+        btn.textContent = '🎤 Unmute';
+        btn.style.background = '#4fc3f7';
+        btn.style.color = '#0f1117';
+      } else {
+        socket.emit('unmute_student', { sid });
+        mutedStudents[sid] = true;
+        btn.textContent = '🔇 Mute';
+        btn.style.background = '#ef5350';
+        btn.style.color = 'white';
+      }
+    }
+
+    function updateHandsBar() {
+      const raised = [];
+      document.querySelectorAll('.hand-indicator').forEach(el => {
+        if (el.style.display !== 'none') {
+          const name = el.closest('.card-footer')?.querySelector('.student-name')?.textContent;
+          if (name) raised.push(name);
+        }
+      });
+      const bar = document.getElementById('hands-bar');
+      document.getElementById('hands-list').textContent = raised.join(', ');
+      bar.style.display = raised.length > 0 ? 'block' : 'none';
+    }
+
+    function getOrCreateCard(sid, name) {
+      let card = document.getElementById(`card-${sid}`);
+      if (!card) {
+        card = document.createElement('div');
+        card.className = 'student-card';
+        card.id = `card-${sid}`;
+        card.innerHTML = `
+          <img id="img-${sid}" src="" alt="${name}" />
+          <div class="card-footer">
+            <div class="card-top">
+              <span class="student-name">👤 ${name}</span>
+              <span class="badge" id="badge-${sid}">...</span>
+            </div>
+            <span class="emotion-label" id="emotion-${sid}">😐 Neutral</span>
+            <div class="card-actions">
+              <span class="hand-indicator" id="hand-${sid}">✋ Hand Raised</span>
+              <button class="unmute-btn" id="unmute-btn-${sid}">🎤 Unmute</button>
+              <button class="kick-btn" id="kick-${sid}">Remove</button>
+            </div>
+          </div>`;
+        document.getElementById('grid').appendChild(card);
+        document.getElementById(`kick-${sid}`).addEventListener('click', () => kickStudent(sid, name));
+        document.getElementById(`unmute-btn-${sid}`).addEventListener('click', () => toggleMute(sid));
+      }
+      return card;
+    }
+
+    function endClass() {
+      if (confirm('Are you sure you want to end the class?')) {
+        socket.emit('end_class');
+      }
+    }
+
+    socket.on('class_ended', () => { window.location.href = '/dashboard'; });
+
+    socket.on('student_joined', (data) => {
+      students[data.sid] = { name: data.name, attentive: false };
+      getOrCreateCard(data.sid, data.name);
+      updateStats();
+    });
+
+    socket.on('student_left', (data) => {
+      delete students[data.sid];
+      const card = document.getElementById(`card-${data.sid}`);
+      if (card) card.remove();
+      updateStats();
+    });
+
+    socket.on('student_frame', (data) => {
+      const { sid, name, frame, attentive, emotion } = data;
+      if (!students[sid]) { students[sid] = { name, attentive }; getOrCreateCard(sid, name); }
+      else { students[sid].attentive = attentive; }
+
+      const img = document.getElementById(`img-${sid}`);
+      if (img) img.src = frame;
+
+      const badge = document.getElementById(`badge-${sid}`);
+      const card  = document.getElementById(`card-${sid}`);
+      if (badge && card) {
+        if (attentive) {
+          badge.textContent = '✅ Attentive'; badge.className = 'badge yes';
+          card.className = 'student-card attentive';
+        } else {
+          badge.textContent = '⚠️ Not Attentive'; badge.className = 'badge no';
+          card.className = 'student-card not-attentive';
+        }
+      }
+
+      const emotionEl = document.getElementById(`emotion-${sid}`);
+      if (emotionEl) emotionEl.textContent = emotion || '❓ Unknown';
+
+      updateStats();
+    });
+
+    let micStream = null;
+let audioContext = null;
+let processor = null;
+let micOn = false;
+
+async function toggleMic() {
+  const btn = document.getElementById('mic-btn');
+  if (micOn) {
+    // Stop mic
+    if (processor) processor.disconnect();
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    if (audioContext) audioContext.close();
+    micOn = false;
+    btn.textContent = '🎤 Start Speaking';
+    btn.style.background = '#1e2130';
+    btn.style.color = '#69f0ae';
+    socket.emit('teacher_mic_stop');
+  } else {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new AudioContext({ sampleRate: 16000 });
+      const source = audioContext.createMediaStreamSource(micStream);
+      processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        // Convert float32 to int16
+        const int16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          int16[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+        }
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
+        socket.emit('teacher_audio', { audio: base64 });
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      micOn = true;
+      btn.textContent = '🔴 Stop Speaking';
+      btn.style.background = '#b71c1c';
+      btn.style.color = '#ff8a80';
+    } catch (e) {
+      alert('Microphone access denied. Please allow mic permissions.');
+    }
+  }
+}
+
+    socket.on('hand_raised', (data) => {
+      const handEl   = document.getElementById(`hand-${data.sid}`);
+      const unmuteBtn = document.getElementById(`unmute-btn-${data.sid}`);
+      if (handEl)    handEl.style.display    = data.raised ? 'inline' : 'none';
+      if (unmuteBtn) unmuteBtn.style.display = data.raised ? 'inline-block' : 'none';
+      updateHandsBar();
+    });
+  </script>
+</body>
+</html>

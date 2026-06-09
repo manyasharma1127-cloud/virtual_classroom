@@ -1,0 +1,635 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Whiteboard – Teacher</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #1a1a2e;
+      font-family: 'Nunito', sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #toolbar {
+      background: #16213e;
+      border-bottom: 2px solid #0f3460;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      z-index: 10;
+    }
+    #toolbar h2 { color: #e94560; font-size: 1.1rem; margin-right: 8px; white-space: nowrap; }
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #0f3460;
+      border-radius: 10px;
+      padding: 6px 10px;
+    }
+    .tool-btn {
+      background: transparent;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      padding: 6px 10px;
+      color: #a0aec0;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: 'Nunito', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .tool-btn:hover { background: #1a4a7a; color: white; }
+    .tool-btn.active { background: #e94560; border-color: #ff6b6b; color: white; }
+    .color-swatch {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .color-swatch:hover { transform: scale(1.2); }
+    .color-swatch.active { border-color: white; transform: scale(1.15); }
+    #custom-color {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      border: 3px solid #555;
+      cursor: pointer;
+      padding: 0;
+    }
+    .size-label { color: #a0aec0; font-size: 0.75rem; }
+    #pen-size { width: 80px; accent-color: #e94560; }
+    #clear-btn {
+      background: #e94560;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: 'Nunito', sans-serif;
+      margin-left: auto;
+    }
+    #clear-btn:hover { background: #c73652; }
+    #canvas-wrapper {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #f8f8f0;
+    }
+    #whiteboard {
+      position: absolute;
+      top: 0; left: 0;
+      touch-action: none;
+    }
+    #statusbar {
+      background: #16213e;
+      border-top: 1px solid #0f3460;
+      padding: 6px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 0.75rem;
+      color: #a0aec0;
+    }
+    #live-dot {
+      width: 8px; height: 8px;
+      background: #69f0ae;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 4px;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── Alert Panel ─────────────────────────────────────── */
+    #alert-panel {
+      position: fixed;
+      top: 70px;
+      right: 20px;
+      width: 290px;
+      max-height: 70vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    .alert-card {
+      background: #1a1030;
+      border: 1px solid #3a1040;
+      border-left: 4px solid #e94560;
+      border-radius: 12px;
+      padding: 12px 16px;
+      color: #f0e6ff;
+      font-size: 0.82rem;
+      pointer-events: all;
+      animation: alertSlideIn 0.3s ease;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    }
+    .alert-card.not-attentive {
+      border-left-color: #ff8f00;
+    }
+    @keyframes alertSlideIn {
+      from { opacity: 0; transform: translateX(50px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes alertFadeOut {
+      from { opacity: 1; transform: translateX(0); }
+      to   { opacity: 0; transform: translateX(50px); }
+    }
+    .alert-card.removing {
+      animation: alertFadeOut 0.3s ease forwards;
+    }
+    .alert-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .alert-name {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: #f9c4d1;
+    }
+    .alert-name.not-attentive {
+      color: #ffd180;
+    }
+    .alert-close {
+      background: none;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .alert-close:hover { color: #fff; }
+    .alert-emotion {
+      font-size: 1rem;
+      margin-bottom: 2px;
+    }
+    .alert-time {
+      color: #666;
+      font-size: 0.7rem;
+      margin-top: 4px;
+    }
+    .alert-badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      margin-top: 6px;
+      background: #3d0a20;
+      color: #ff8aaa;
+      letter-spacing: 0.03em;
+    }
+    .alert-badge.not-attentive {
+      background: #3d2200;
+      color: #ffd180;
+    }
+
+    /* Mute button in statusbar */
+    #mute-btn {
+      background: #0f3460;
+      color: #a0aec0;
+      border: none;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      font-family: 'Nunito', sans-serif;
+      font-weight: 600;
+      margin-left: auto;
+      transition: background 0.15s;
+    }
+    #mute-btn:hover { background: #1a4a7a; color: #fff; }
+    #mute-btn.muted { background: #3a1a1a; color: #ff8a80; }
+  </style>
+</head>
+<body>
+
+  <div id="toolbar">
+    <h2>🖊️ Whiteboard</h2>
+    <button id="mic-btn" style="background:#1e2130;color:#69f0ae;border:1px solid #2e7d32;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:0.85rem;white-space:nowrap;">🎤 Start Speaking</button>
+    <a href="/teacher" style="
+      background: #0f3460;
+      color: #4fc3f7;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-weight: 700;
+      text-decoration: none;
+      font-size: 0.8rem;
+      white-space: nowrap;
+    ">← Dashboard</a>
+
+    <div class="tool-group">
+      <button class="tool-btn active" id="btn-pen">✏️ Pen</button>
+      <button class="tool-btn" id="btn-marker">🖌️ Marker</button>
+      <button class="tool-btn" id="btn-eraser">🧹 Eraser</button>
+    </div>
+
+    <div class="tool-group" id="color-group">
+      <div class="color-swatch active" data-color="#1a1a1a" style="background:#1a1a1a"></div>
+      <div class="color-swatch" data-color="#e94560" style="background:#e94560"></div>
+      <div class="color-swatch" data-color="#4fc3f7" style="background:#4fc3f7"></div>
+      <div class="color-swatch" data-color="#69f0ae" style="background:#69f0ae"></div>
+      <div class="color-swatch" data-color="#fff176" style="background:#fff176"></div>
+      <div class="color-swatch" data-color="#ff8a65" style="background:#ff8a65"></div>
+      <div class="color-swatch" data-color="#ce93d8" style="background:#ce93d8"></div>
+      <input type="color" id="custom-color" title="Custom color" />
+    </div>
+
+    <div class="tool-group">
+      <span class="size-label">Size</span>
+      <input type="range" id="pen-size" min="1" max="30" value="4" />
+      <span class="size-label" id="size-display">4px</span>
+    </div>
+
+    <button id="clear-btn">🗑️ Clear All</button>
+    <a href="/dashboard" style="
+  background: #14b89a;
+  color: white;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  font-family: 'Nunito', sans-serif;
+  white-space: nowrap;
+"></a>
+  </div>
+
+  <div id="canvas-wrapper">
+    <canvas id="whiteboard"></canvas>
+  </div>
+
+  <div id="statusbar">
+    <span><span id="live-dot"></span> Live to students</span>
+    <span id="student-count">👥 0 students watching</span>
+    <span id="alert-status" style="color:#69f0ae; font-size:0.72rem;">🔔 Alerts ON</span>
+    <button id="mute-btn">🔇 Mute Sound</button>
+  </div>
+
+  <!-- Alert Panel (top-right corner) -->
+  <div id="alert-panel"></div>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+
+      const socket = io();
+      // ── Mic ───────────────────────────────────────────────────────────────────
+let micStream = null;
+let audioContext = null;
+let processor = null;
+let micOn = false;
+
+document.getElementById('mic-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('mic-btn');
+  if (micOn) {
+    if (processor) processor.disconnect();
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    if (audioContext) audioContext.close();
+    micOn = false;
+    btn.textContent = '🎤 Start Speaking';
+    btn.style.background = '#1e2130';
+    btn.style.color = '#69f0ae';
+    socket.emit('teacher_mic_stop');
+  } else {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new AudioContext({ sampleRate: 16000 });
+      const source = audioContext.createMediaStreamSource(micStream);
+      processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        const int16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          int16[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+        }
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
+        socket.emit('teacher_audio', { audio: base64 });
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      micOn = true;
+      btn.textContent = '🔴 Stop Speaking';
+      btn.style.background = '#b71c1c';
+      btn.style.color = '#ff8a80';
+    } catch (e) {
+      alert('Microphone access denied. Please allow mic permissions.');
+    }
+  }
+});
+      const canvas = document.getElementById('whiteboard');
+      const ctx    = canvas.getContext('2d');
+
+      let tool = 'pen';
+      let color = '#1a1a1a';
+      let size  = 4;
+      let drawing = false;
+      let lastX = 0, lastY = 0;
+      let studentCount = 0;
+      let soundMuted = false;
+
+      // ── Resize canvas ──────────────────────────────────────────────
+      function resizeCanvas() {
+        const wrapper = document.getElementById('canvas-wrapper');
+        const w = wrapper.clientWidth  || window.innerWidth;
+        const h = wrapper.clientHeight || (window.innerHeight - 120);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        canvas.width  = w;
+        canvas.height = h;
+        ctx.putImageData(imageData, 0, 0);
+      }
+      setTimeout(resizeCanvas, 100);
+      window.addEventListener('resize', resizeCanvas);
+
+      // ── Tool buttons ───────────────────────────────────────────────
+      ['pen', 'marker', 'eraser'].forEach(t => {
+        document.getElementById(`btn-${t}`).addEventListener('click', () => {
+          tool = t;
+          document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+          document.getElementById(`btn-${t}`).classList.add('active');
+          canvas.style.cursor = t === 'eraser' ? 'cell' : 'crosshair';
+        });
+      });
+
+      // ── Color swatches ─────────────────────────────────────────────
+      document.querySelectorAll('.color-swatch').forEach(swatch => {
+        swatch.addEventListener('click', () => {
+          color = swatch.dataset.color;
+          document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+          swatch.classList.add('active');
+          if (tool === 'eraser') {
+            tool = 'pen';
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-pen').classList.add('active');
+          }
+        });
+      });
+
+      document.getElementById('custom-color').addEventListener('input', (e) => {
+        color = e.target.value;
+        document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+      });
+
+      // ── Size slider ────────────────────────────────────────────────
+      document.getElementById('pen-size').addEventListener('input', (e) => {
+        size = parseInt(e.target.value);
+        document.getElementById('size-display').textContent = size + 'px';
+      });
+
+      // ── Clear button ───────────────────────────────────────────────
+      document.getElementById('clear-btn').addEventListener('click', () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        socket.emit('wb_clear');
+      });
+
+      // ── Mute button ────────────────────────────────────────────────
+      document.getElementById('mute-btn').addEventListener('click', () => {
+        soundMuted = !soundMuted;
+        const btn = document.getElementById('mute-btn');
+        const status = document.getElementById('alert-status');
+        if (soundMuted) {
+          btn.textContent = '🔔 Unmute Sound';
+          btn.classList.add('muted');
+          status.textContent = '🔕 Sound OFF';
+          status.style.color = '#ff8a80';
+        } else {
+          btn.textContent = '🔇 Mute Sound';
+          btn.classList.remove('muted');
+          status.textContent = '🔔 Alerts ON';
+          status.style.color = '#69f0ae';
+        }
+      });
+
+      // ── Drawing ────────────────────────────────────────────────────
+      function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        if (e.touches) {
+          return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+        }
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      }
+
+      function applyStroke(x1, y1, x2, y2, t, c, s) {
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        if (t === 'eraser') {
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.lineWidth   = s * 3;
+          ctx.strokeStyle = 'rgba(0,0,0,1)';
+          ctx.globalAlpha = 1;
+        } else if (t === 'marker') {
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = 0.4;
+          ctx.lineWidth   = s * 3;
+          ctx.strokeStyle = c;
+        } else {
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = 1;
+          ctx.lineWidth   = s;
+          ctx.strokeStyle = c;
+        }
+        ctx.lineCap    = 'round';
+        ctx.lineJoin   = 'round';
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+      }
+
+      canvas.addEventListener('mousedown', (e) => {
+        drawing = true;
+        const pos = getPos(e);
+        lastX = pos.x; lastY = pos.y;
+      });
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (!drawing) return;
+        const pos = getPos(e);
+        applyStroke(lastX, lastY, pos.x, pos.y, tool, color, size);
+        socket.emit('wb_stroke', {
+          x1: lastX, y1: lastY, x2: pos.x, y2: pos.y,
+          color, size, tool,
+          cw: canvas.width, ch: canvas.height
+        });
+        lastX = pos.x; lastY = pos.y;
+      });
+
+      canvas.addEventListener('mouseup',    () => { drawing = false; });
+      canvas.addEventListener('mouseleave', () => { drawing = false; });
+
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        drawing = true;
+        const pos = getPos(e);
+        lastX = pos.x; lastY = pos.y;
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (!drawing) return;
+        const pos = getPos(e);
+        applyStroke(lastX, lastY, pos.x, pos.y, tool, color, size);
+        socket.emit('wb_stroke', {
+          x1: lastX, y1: lastY, x2: pos.x, y2: pos.y,
+          color, size, tool,
+          cw: canvas.width, ch: canvas.height
+        });
+        lastX = pos.x; lastY = pos.y;
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', () => { drawing = false; });
+
+      // ── Student count ──────────────────────────────────────────────
+      socket.on('student_joined', () => {
+        studentCount++;
+        document.getElementById('student-count').textContent =
+          `👥 ${studentCount} student${studentCount !== 1 ? 's' : ''} watching`;
+      });
+
+      socket.on('student_left', () => {
+        studentCount = Math.max(0, studentCount - 1);
+        document.getElementById('student-count').textContent =
+          `👥 ${studentCount} student${studentCount !== 1 ? 's' : ''} watching`;
+      });
+
+      // ── Receive whiteboard strokes ─────────────────────────────────
+      socket.on('wb_stroke', (data) => {
+        const scaleX = canvas.width  / (data.cw || canvas.width);
+        const scaleY = canvas.height / (data.ch || canvas.height);
+        applyStroke(
+          data.x1 * scaleX, data.y1 * scaleY,
+          data.x2 * scaleX, data.y2 * scaleY,
+          data.tool, data.color, data.size
+        );
+      });
+
+      socket.on('wb_clear', () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      });
+
+
+      // ══════════════════════════════════════════════════════════════
+      // TEACHER ALERT SYSTEM
+      // ══════════════════════════════════════════════════════════════
+
+      const EMOTION_ICONS = {
+        sad:      '😢',
+        angry:    '😠',
+        fear:     '😨',
+        surprise: '😲',
+        disgust:  '😤',
+        unknown:  '❓'
+      };
+
+      const EMOTION_LABELS = {
+        sad:      'Sad',
+        angry:    'Angry',
+        fear:     'Scared / Confused',
+        surprise: 'Surprised',
+        disgust:  'Frustrated',
+        unknown:  'Unknown'
+      };
+
+      // Cooldown map: prevent spam (10s per student)
+      const alertCooldown = {};
+
+      // Web Audio API — short descending beep
+      function playAlertSound() {
+        if (soundMuted) return;
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return;
+          const ctx2  = new AudioCtx();
+          const osc   = ctx2.createOscillator();
+          const gain  = ctx2.createGain();
+          osc.connect(gain);
+          gain.connect(ctx2.destination);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(900, ctx2.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(500, ctx2.currentTime + 0.25);
+          gain.gain.setValueAtTime(0.35, ctx2.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime + 0.45);
+          osc.start(ctx2.currentTime);
+          osc.stop(ctx2.currentTime + 0.45);
+        } catch (e) { /* silently ignore */ }
+      }
+
+      function removeCard(card) {
+        card.classList.add('removing');
+        setTimeout(() => card.remove(), 300);
+      }
+
+      socket.on('teacher_alert', (data) => {
+        const { sid, name, emotion, attentive } = data;
+        const now = Date.now();
+
+        // Skip if within cooldown window (10 seconds)
+        if (alertCooldown[sid] && now - alertCooldown[sid] < 10000) return;
+        alertCooldown[sid] = now;
+
+        const panel       = document.getElementById('alert-panel');
+        const emotionKey  = (emotion || 'unknown').toLowerCase();
+        const icon        = EMOTION_ICONS[emotionKey]  || '⚠️';
+        const label       = EMOTION_LABELS[emotionKey] || emotion || 'Unknown';
+        const isNegEmotion = emotionKey in EMOTION_ICONS && emotionKey !== 'unknown';
+        const isNotAtt    = !attentive;
+
+        // Build card
+        const card = document.createElement('div');
+        card.className = 'alert-card' + (isNotAtt && !isNegEmotion ? ' not-attentive' : '');
+        card.innerHTML = `
+          <div class="alert-header">
+            <span class="alert-name${isNotAtt && !isNegEmotion ? ' not-attentive' : ''}">
+              👤 ${name}
+            </span>
+            <button class="alert-close" title="Dismiss">✕</button>
+          </div>
+          <div class="alert-emotion">${icon} ${isNotAtt && !isNegEmotion ? 'Not Attentive' : label}</div>
+          <div>
+            <span class="alert-badge${isNotAtt && !isNegEmotion ? ' not-attentive' : ''}">
+              ${isNotAtt && !isNegEmotion ? '⚠️ NOT ATTENTIVE' : '🚨 NEEDS ATTENTION'}
+            </span>
+          </div>
+          <div class="alert-time">${new Date().toLocaleTimeString()}</div>
+        `;
+
+        // Dismiss button
+        card.querySelector('.alert-close').addEventListener('click', () => removeCard(card));
+
+        // Prepend so newest is on top
+        panel.prepend(card);
+
+        // Play sound
+        playAlertSound();
+
+        // Auto-remove after 8 seconds
+        setTimeout(() => {
+          if (card.parentNode) removeCard(card);
+        }, 8000);
+      });
+
+    }); // end DOMContentLoaded
+  </script>
+</body>
+</html>

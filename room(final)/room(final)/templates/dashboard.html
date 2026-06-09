@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Session Dashboard – EduVisionAI</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0f; font-family: 'Nunito', sans-serif; color: #e0f8ff; min-height: 100vh; }
+
+    #navbar {
+      background: #0d0d14; border-bottom: 1px solid #1a1a2e;
+      padding: 12px 28px; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    }
+    #navbar h1 { color: #fff; font-size: 1.1rem; font-weight: 700; }
+    #navbar h1 span { color: #00cfff; }
+    .nav-btn {
+      background: #111120; color: #00cfff; border: 1px solid #1a1a3a;
+      border-radius: 8px; padding: 7px 16px; font-size: 0.8rem; font-weight: 700;
+      cursor: pointer; text-decoration: none; font-family: 'Nunito', sans-serif;
+    }
+    .nav-btn:hover { background: #1a1a30; }
+    .badge-end {
+      background: #0d0d14; color: #00cfff; border: 1px solid #1a1a3a;
+      border-radius: 20px; padding: 4px 16px; font-size: 0.75rem; font-weight: 700;
+    }
+
+    #main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 40px; }
+
+    #session-bar {
+      background: #111120; border: 1px solid #1a1a3a; border-radius: 10px;
+      padding: 14px 20px; display: flex; align-items: center;
+      justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+    }
+    .sb-title { font-size: 1rem; font-weight: 700; color: #fff; }
+    .sb-meta  { font-size: 0.75rem; color: #00cfff; margin-top: 2px; }
+
+    .metrics {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px; margin-bottom: 20px;
+    }
+    .metric-card { background: #111120; border: 1px solid #1a1a3a; border-radius: 10px; padding: 16px; }
+    .metric-label { font-size: 0.7rem; color: #5ec8e0; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+    .metric-value { font-size: 28px; font-weight: 700; line-height: 1; color: #fff; }
+    .metric-value.cyan { color: #00cfff; }
+    .metric-value.red  { color: #e05555; }
+    .metric-value.sm   { font-size: 16px; margin-top: 4px; }
+    .metric-sub { font-size: 0.68rem; color: #2a3a4a; margin-top: 4px; }
+
+    .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    @media (max-width: 640px) { .charts-row { grid-template-columns: 1fr; } }
+    .chart-card { background: #111120; border: 1px solid #1a1a3a; border-radius: 10px; padding: 16px; }
+    .card-title { font-size: 0.8rem; font-weight: 700; color: #7ee8f8; margin-bottom: 10px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 0.7rem; color: #5ec8e0; }
+    .legend-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+
+    .table-card { background: #111120; border: 1px solid #1a1a3a; border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+    .table-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+    .export-btn {
+      background: #00cfff; color: #0a0a0f; border: none; border-radius: 8px;
+      padding: 8px 18px; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+      font-family: 'Nunito', sans-serif;
+    }
+    .export-btn:hover { background: #00b8e0; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; table-layout: fixed; }
+    th {
+      color: #5ec8e0; font-size: 0.68rem; text-align: left; padding: 6px 10px;
+      border-bottom: 1px solid #1a1a3a; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    td { padding: 10px; border-bottom: 1px solid rgba(26,26,58,0.6); color: #b0d8e8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(0,207,255,0.04); }
+
+    .pill { display: inline-flex; align-items: center; gap: 3px; font-size: 0.68rem; padding: 3px 9px; border-radius: 20px; font-weight: 700; white-space: nowrap; }
+    .p-no      { background: #2a0f0f; color: #e05555; }
+    .p-yes     { background: #071420; color: #00cfff; }
+    .p-sad     { background: #071820; color: #5ec8e0; }
+    .p-angry   { background: #2a0f0f; color: #ff8a80; }
+    .p-fear    { background: #1a0a2a; color: #ce93d8; }
+    .p-surprise{ background: #1a1a07; color: #e0d060; }
+    .p-disgust { background: #1a0a1a; color: #f48fb1; }
+    .p-neutral { background: #0d1520; color: #7ee8f8; }
+    .p-happy   { background: #07141a; color: #00cfff; }
+    .p-unknown { background: #1a1a1a; color: #a0aec0; }
+
+    #loading { text-align: center; padding: 60px 20px; color: #5ec8e0; font-size: 1rem; }
+    .spinner {
+      width: 36px; height: 36px; border: 3px solid #1a1a3a; border-top-color: #00cfff;
+      border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #empty-state { display: none; text-align: center; padding: 60px 20px; color: #5ec8e0; }
+    #empty-state .big { font-size: 2rem; margin-bottom: 10px; }
+    #empty-state p { font-size: 0.85rem; color: #2a3a4a; }
+  </style>
+</head>
+<body>
+
+  <div id="navbar">
+    <h1>📊 Session <span>Dashboard</span></h1>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span class="badge-end">● Session Ended</span>
+      <a href="/teacher" class="nav-btn">← Back to Class</a>
+    </div>
+  </div>
+
+  <div id="main">
+
+    <div id="loading">
+      <div class="spinner"></div>
+      Loading session data...
+    </div>
+
+    <div id="empty-state">
+      <div class="big">📭</div>
+      <p>No session data found.<br>Start a class session first, then end it to see the report.</p>
+      <a href="/teacher" class="nav-btn" style="display:inline-block;margin-top:16px;">Go to Class →</a>
+    </div>
+
+    <div id="dashboard-content" style="display:none;">
+
+      <div id="session-bar">
+        <div>
+          <div class="sb-title" id="class-name">—</div>
+          <div class="sb-meta" id="session-meta">—</div>
+        </div>
+        <span style="font-size:0.75rem;color:#5ec8e0;" id="duration-badge">⏱ —</span>
+      </div>
+
+      <div class="metrics">
+        <div class="metric-card">
+          <div class="metric-label">Total Students</div>
+          <div class="metric-value" id="m-total">—</div>
+          <div class="metric-sub">joined session</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Attentive</div>
+          <div class="metric-value cyan" id="m-att">—</div>
+          <div class="metric-sub" id="m-att-pct">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Not Attentive</div>
+          <div class="metric-value red" id="m-notatt">—</div>
+          <div class="metric-sub" id="m-notatt-pct">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Top Emotion</div>
+          <div class="metric-value sm" id="m-emotion">—</div>
+          <div class="metric-sub">most detected</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Left Early</div>
+          <div class="metric-value red" id="m-left-early">—</div>
+          <div class="metric-sub">before class ended</div>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="card-title">Engagement breakdown</div>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-dot" style="background:#00cfff"></span>Attentive</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#e05555"></span>Not Attentive</span>
+          </div>
+          <div style="position:relative;width:100%;height:220px;">
+            <canvas id="pieChart"></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="card-title">Emotion distribution</div>
+          <div class="legend" id="emo-legend"></div>
+          <div style="position:relative;width:100%;height:220px;">
+            <canvas id="emoChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card" style="margin-bottom:20px;">
+        <div class="card-title" id="timeline-title">Engagement timeline</div>
+        <div class="legend">
+          <span class="legend-item"><span class="legend-dot" style="background:#00cfff"></span>Attentive</span>
+          <span class="legend-item"><span class="legend-dot" style="background:#e05555"></span>Not Attentive</span>
+        </div>
+        <div style="position:relative;width:100%;height:180px;">
+          <canvas id="timelineChart"></canvas>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header">
+          <div class="card-title" style="margin-bottom:0;">All Students</div>
+          <button class="export-btn" onclick="downloadCSV()">⬇ Export CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:24%">Student</th>
+                <th style="width:28%">Attention</th>
+                <th style="width:22%">Top Emotion</th>
+                <th style="width:26%">Att. Score</th>
+              </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const EMO_META = {
+      sad:      { label: '😢 Sad',      cls: 'p-sad',      color: '#5ec8e0' },
+      angry:    { label: '😠 Angry',    cls: 'p-angry',    color: '#e05555' },
+      fear:     { label: '😨 Fear',     cls: 'p-fear',     color: '#ce93d8' },
+      surprise: { label: '😲 Surprise', cls: 'p-surprise', color: '#e0d060' },
+      disgust:  { label: '😤 Disgust',  cls: 'p-disgust',  color: '#f48fb1' },
+      neutral:  { label: '😐 Neutral',  cls: 'p-neutral',  color: '#7ee8f8' },
+      happy:    { label: '😊 Happy',    cls: 'p-happy',    color: '#00cfff' },
+      unknown:  { label: '❓ Unknown',  cls: 'p-unknown',  color: '#a0aec0' },
+    };
+
+    let pieChartInst, emoChartInst, tlChartInst;
+    let allStudents = [];
+
+    function buildDashboard(s) {
+      document.getElementById('loading').style.display = 'none';
+
+      if (!s.students || s.students.length === 0) {
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('dashboard-content').style.display = 'block';
+      allStudents = s.students;
+
+      const total       = s.students.length;
+      const attentive   = s.students.filter(x => x.attentive);
+      const inattentive = s.students.filter(x => !x.attentive);
+      const leftEarly   = s.students.filter(x => x.left_early);
+
+      document.getElementById('class-name').textContent =
+        (s.className || 'Class') + ' — ' + (s.room || '');
+      document.getElementById('session-meta').textContent =
+        new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'short' }) +
+        ' · Duration: ' + (s.duration || '—') + ' · ' + total + ' student' + (total !== 1 ? 's' : '');
+      document.getElementById('duration-badge').textContent = '⏱ ' + (s.duration || '—');
+
+      document.getElementById('m-total').textContent       = total;
+      document.getElementById('m-att').textContent         = attentive.length;
+      document.getElementById('m-att-pct').textContent     = Math.round(attentive.length / total * 100) + '% of class';
+      document.getElementById('m-notatt').textContent      = inattentive.length;
+      document.getElementById('m-notatt-pct').textContent  = Math.round(inattentive.length / total * 100) + '% of class';
+      document.getElementById('m-left-early').textContent  = leftEarly.length;
+
+      const emoCounts = {};
+      s.students.forEach(st => {
+        const e = (st.emotion || 'unknown').toLowerCase();
+        emoCounts[e] = (emoCounts[e] || 0) + 1;
+      });
+      const domEmo = Object.entries(emoCounts).sort((a, b) => b[1] - a[1])[0][0];
+      document.getElementById('m-emotion').textContent = EMO_META[domEmo]?.label || domEmo;
+
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = '';
+
+      if (s.students.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#5ec8e0;padding:20px;">No students in this session.</td></tr>';
+      } else {
+        s.students.forEach(st => {
+          const emoKey = (st.emotion || 'unknown').toLowerCase();
+          const m = EMO_META[emoKey] || EMO_META['unknown'];
+          const attPill = st.attentive
+            ? '<span class="pill p-yes">✅ Attentive</span>'
+            : '<span class="pill p-no">⚠ Not Attentive</span>';
+          const leftPill = st.left_early
+            ? ' <span class="pill p-angry">🚪 Left Early</span>'
+            : '';
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="font-weight:700;color:#e0f8ff;">${st.name}</td>
+            <td>${attPill}${leftPill}</td>
+            <td><span class="pill ${m.cls}">${m.label}</span></td>
+            <td style="color:#7ee8f8;">${st.score}%</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      const eleg = document.getElementById('emo-legend');
+      eleg.innerHTML = '';
+      Object.entries(emoCounts).forEach(([k, v]) => {
+        const m = EMO_META[k] || EMO_META['unknown'];
+        const sp = document.createElement('span');
+        sp.className = 'legend-item';
+        sp.innerHTML = `<span class="legend-dot" style="background:${m.color}"></span>${m.label} (${v})`;
+        eleg.appendChild(sp);
+      });
+
+      if (pieChartInst) pieChartInst.destroy();
+      if (emoChartInst) emoChartInst.destroy();
+      if (tlChartInst)  tlChartInst.destroy();
+
+      pieChartInst = new Chart(document.getElementById('pieChart'), {
+        type: 'pie',
+        data: {
+          labels: ['Attentive', 'Not Attentive'],
+          datasets: [{
+            data: [attentive.length, inattentive.length],
+            backgroundColor: ['#00cfff', '#e05555'],
+            borderColor: '#111120',
+            borderWidth: 3,
+            hoverOffset: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } }
+        }
+      });
+
+      const eKeys = Object.keys(emoCounts);
+      emoChartInst = new Chart(document.getElementById('emoChart'), {
+        type: 'bar',
+        data: {
+          labels: eKeys.map(k => EMO_META[k]?.label || k),
+          datasets: [{
+            data: eKeys.map(k => emoCounts[k]),
+            backgroundColor: eKeys.map(k => EMO_META[k]?.color || '#aaa'),
+            borderRadius: 6,
+            borderSkipped: false,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#5ec8e0', font: { size: 10 } }, grid: { color: 'rgba(26,26,58,.3)' } },
+            y: { ticks: { color: '#5ec8e0', stepSize: 1 },        grid: { color: 'rgba(26,26,58,.3)' } }
+          }
+        }
+      });
+
+      const tl = s.timeline || {};
+      const tlLabels = tl.labels || [];
+
+      document.getElementById('timeline-title').textContent =
+        `Engagement timeline (${tlLabels.length} segment${tlLabels.length !== 1 ? 's' : ''} · 5 min each)`;
+
+      tlChartInst = new Chart(document.getElementById('timelineChart'), {
+        type: 'bar',
+        data: {
+          labels: tlLabels,
+          datasets: [
+            { label: 'Attentive',     data: tl.attentive    || [], backgroundColor: '#00cfff', borderRadius: 4, borderSkipped: false },
+            { label: 'Not Attentive', data: tl.notAttentive || [], backgroundColor: '#e05555', borderRadius: 4, borderSkipped: false },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { stacked: true, ticks: { color: '#5ec8e0', font: { size: 10 } }, grid: { color: 'rgba(26,26,58,.3)' } },
+            y: { stacked: true, ticks: { color: '#5ec8e0', stepSize: 2 },        grid: { color: 'rgba(26,26,58,.3)' } }
+          }
+        }
+      });
+    }
+
+    function downloadCSV() {
+      const rows = [['Student Name', 'Attentive', 'Top Emotion', 'Attention Score', 'Left Early']];
+      allStudents.forEach(s => {
+        rows.push([
+          s.name,
+          s.attentive ? 'Yes' : 'No',
+          s.emotion,
+          s.score + '%',
+          s.left_early ? 'Yes' : 'No'
+        ]);
+      });
+      const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = 'session_report_' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+    }
+
+    fetch('/api/session/latest')
+      .then(r => r.json())
+      .then(data => buildDashboard(data))
+      .catch(err => {
+        console.error('API error:', err);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('empty-state').style.display = 'block';
+      });
+  </script>
+</body>
+</html>
